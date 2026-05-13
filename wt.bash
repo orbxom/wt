@@ -11,11 +11,9 @@
 # the repo was cloned. Works in bash; in zsh use `${(%):-%N}` instead.
 _WT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _WT_PICKER="$_WT_DIR/wt-picker.sh"
-_WT_SUMMARY="$_WT_DIR/wt-summary.sh"
 
 wt() {
   local target
   target=$("$_WT_PICKER" "$@") || return $?
   cd "$target" || return $?
-  "$_WT_SUMMARY" || true
 }

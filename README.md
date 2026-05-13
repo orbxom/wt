@@ -25,7 +25,6 @@ Use it for: fast worktree switching when you're juggling several branches at onc
 | `fzf` | yes | the interactive picker |
 | `jq` | yes | parsing `gh` JSON output |
 | `gh` | optional | populates the PR column; degrade silently if missing/unauthed |
-| `claude` | optional | enables the auto-summary of the latest Claude conversation after cd; degrade silently if missing |
 
 On Debian/Ubuntu: `sudo apt install fzf jq`. On macOS with Homebrew: `brew install fzf jq`.
 
@@ -79,7 +78,6 @@ Inside the picker:
 6. **Resolve.** Pre-existing worktree → echo its path. No worktree → compute `<repo>/.worktrees/<branch-with-slashes-replaced-by-hyphens>`, `git worktree add`, then echo.
 7. **Symlink propagation.** If `<repo>/.setup/shared/symlink-settings.sh` exists, it's invoked with `--target <new-worktree>` to mirror any per-worktree setup. Skipped silently if absent.
 8. **Shell function.** The function captures the script's stdout (the target path) and `cd`s into it.
-9. **Conversation summary.** After `cd`, the function calls `wt-summary.sh`, which looks up `~/.claude/projects/<encoded-cwd>/` (path-encoding: every non-`[a-zA-Z0-9_-]` character → `-`, so `/home/u/Foo.Bar/.worktrees/x` → `-home-u-Foo-Bar--worktrees-x`) and finds the newest `.jsonl` — the most recent Claude Code session for the worktree. If one exists, it prints `… summarizing prior Claude session` to stderr, then pipes the last ten user/assistant text messages through `claude -p --model haiku --no-session-persistence` and prints a 3-bullet summary on stdout. Lets you decide whether to `claude --continue` or start fresh, before opening Claude. Silent if no prior conversation, no `claude` on PATH, or no summarizable content in the JSONL. Results cached at `${XDG_CACHE_HOME:-~/.cache}/wt-summary/<sha256>` keyed on the JSONL's mtime — repeat `wt` into the same worktree is instant until a new turn lands.
 
 ## Files
 
@@ -87,8 +85,6 @@ Inside the picker:
 |---|---|
 | `wt-picker.sh` | The whole picker. Prints absolute target path on stdout, exits 0 on success, 130 on user cancel, 1 on error. |
 | `wt-picker.test.sh` | Bash test harness for the picker. ~13 tests; runnable as `bash wt-picker.test.sh`. |
-| `wt-summary.sh` | Prints a 3-bullet Haiku summary of the latest Claude conversation in `$PWD`, or nothing. Always exits 0. Invoked by the shell function after cd. |
-| `wt-summary.test.sh` | Bash test harness for the summary script. ~13 tests; runnable as `bash wt-summary.test.sh`. |
 | `wt.bash` | The shell function. Sources cleanly into bash. |
 | `docs/design.md` | The design spec (architecture, resolve table, row format, dependencies). |
 | `docs/plan.md` | The implementation plan that built this. Useful as a TDD walkthrough. |
