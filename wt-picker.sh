@@ -41,11 +41,11 @@ need() {
 need fzf "sudo apt install fzf"
 need jq  "sudo apt install jq"
 
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+PRIMARY_ROOT=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
   echo "not inside a git repo" >&2
   exit 1
 }
-PRIMARY_ROOT=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+PRIMARY_ROOT=$(dirname "$PRIMARY_ROOT")
 
 # Build branch -> absolute-path map from `git worktree list --porcelain`.
 declare -A WORKTREE_MAP
@@ -127,12 +127,12 @@ resolve_target() {
     return 0
   fi
   local flat="${branch//\//-}"
-  local target="$REPO_ROOT/.worktrees/$flat"
+  local target="$PRIMARY_ROOT/.worktrees/$flat"
   if [ -e "$target" ]; then
     echo "target path exists but isn't a worktree: $target" >&2
     return 1
   fi
-  if ! git -C "$REPO_ROOT" worktree add "$target" "$branch" >&2; then
+  if ! git -C "$PRIMARY_ROOT" worktree add "$target" "$branch" >&2; then
     return 1
   fi
   local helper="$PRIMARY_ROOT/.setup/shared/symlink-settings.sh"

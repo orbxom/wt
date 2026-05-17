@@ -164,6 +164,20 @@ test_pick_new_branch_creates_slash_flattened_worktree() {
     || { echo "  FAIL not registered as worktree"; return 1; }
 }
 
+test_pick_new_branch_from_inside_worktree_anchors_at_primary() {
+  local repo out rc inner
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch existing
+  git -C "$repo" worktree add -q "$repo/.worktrees/existing" existing
+  inner="$repo/.worktrees/existing"
+  git -C "$repo" branch feat/new/thing
+  # Run the picker from inside the existing worktree, not the primary.
+  out=$(cd "$inner" && "$SCRIPT_UNDER_TEST" --pick-by-branch feat/new/thing) ; rc=$?
+  assert_exit_code "$rc" 0 "anchored rc"                                       || return 1
+  assert_eq "$out" "$repo/.worktrees/feat-new-thing" "anchored-at-primary path" || return 1
+}
+
 test_pick_new_branch_refuses_when_target_occupied() {
   local repo out rc
   repo=$(new_repo)
