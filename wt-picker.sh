@@ -4,6 +4,14 @@
 # Usage: wt-picker.sh [--no-pr] [--no-color] [--pick-by-branch <branch>] [-h|--help]
 set -euo pipefail
 
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+  echo "wt-picker.sh requires bash 4 or newer (associative arrays)." >&2
+  echo "  current: ${BASH_VERSION:-unknown}" >&2
+  echo "  macOS:   brew install bash   then re-run with the homebrew bash" >&2
+  echo "  Linux:   your distro should already have bash 4+; check your PATH" >&2
+  exit 1
+fi
+
 NO_PR=0
 NO_COLOR=0
 PICK_BY_BRANCH=""
@@ -35,11 +43,29 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-need() {
-  command -v "$1" >/dev/null 2>&1 || { echo "$1 not found. install with: $2" >&2; exit 1; }
+hint_for() {
+  local tool="$1"
+  if command -v brew >/dev/null 2>&1; then
+    echo "brew install $tool"
+  elif command -v apt >/dev/null 2>&1; then
+    echo "sudo apt install $tool"
+  elif command -v dnf >/dev/null 2>&1; then
+    echo "sudo dnf install $tool"
+  elif command -v pacman >/dev/null 2>&1; then
+    echo "sudo pacman -S $tool"
+  else
+    echo "(install $tool with your package manager)"
+  fi
 }
-need fzf "sudo apt install fzf"
-need jq  "sudo apt install jq"
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "$1 not found. install with: $(hint_for "$1")" >&2
+    exit 1
+  }
+}
+need fzf
+need jq
 
 PRIMARY_ROOT=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
   echo "not inside a git repo" >&2

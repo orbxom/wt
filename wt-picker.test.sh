@@ -236,6 +236,23 @@ test_symlink_helper_absent_is_silent() {
   fi
 }
 
+test_old_bash_exits_with_clear_message() {
+  local old_bash="" cand
+  for cand in /bin/bash /usr/bin/bash; do
+    if [ -x "$cand" ] && "$cand" -c '[ "${BASH_VERSINFO[0]}" -lt 4 ]' 2>/dev/null; then
+      old_bash="$cand"; break
+    fi
+  done
+  if [ -z "$old_bash" ]; then
+    echo "  SKIP (no bash 3.x available to test against)"
+    return 0
+  fi
+  local out rc
+  out=$("$old_bash" "$SCRIPT_UNDER_TEST" --help 2>&1) ; rc=$?
+  assert_exit_code "$rc" 1 "old-bash rc"                              || return 1
+  assert_contains "$out" "bash 4" "old-bash message mentions bash 4"  || return 1
+}
+
 test_no_pr_flag_runs_without_gh() {
   local repo out rc
   repo=$(new_repo)

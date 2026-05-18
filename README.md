@@ -20,13 +20,13 @@ Use it for: fast worktree switching when you're juggling several branches at onc
 
 | Tool | Required? | Why |
 |---|---|---|
-| `bash` ≥ 4 | yes | associative arrays |
+| `bash` ≥ 4 | yes | associative arrays — script exits with a clear error if older |
 | `git` ≥ 2.5 | yes | `git worktree` |
 | `fzf` | yes | the interactive picker |
 | `jq` | yes | parsing `gh` JSON output |
 | `gh` | optional | populates the PR column; degrade silently if missing/unauthed |
 
-On Debian/Ubuntu: `sudo apt install fzf jq`. On macOS with Homebrew: `brew install fzf jq`.
+Install hints are auto-detected: if `fzf` or `jq` is missing, the script tells you the right command for your package manager (`brew`, `apt`, `dnf`, or `pacman`).
 
 ## Install
 
@@ -36,19 +36,48 @@ On Debian/Ubuntu: `sudo apt install fzf jq`. On macOS with Homebrew: `brew insta
    git clone <repo-url> ~/repos/wt
    ```
 
-2. Source `wt.bash` from your shell init. The function uses `${BASH_SOURCE[0]}` to find `wt-picker.sh` next to it, so wherever you clone it is fine.
+2. Install prerequisites for your platform — see the subsections below.
 
-   For bash, add to `~/.bashrc` (or `~/.bash_aliases` if you have that pattern):
+3. Source `wt.bash` from your shell init. The wrapper autodetects whether it's
+   being sourced from bash or zsh, so the same line works in either:
 
    ```bash
+   # add to ~/.bashrc, ~/.bash_aliases, or ~/.zshrc
    source ~/repos/wt/wt.bash
    ```
 
-   For zsh: `wt.bash` is bash-shaped but the `BASH_SOURCE` reference needs adjustment — see the comment at the top of `wt.bash`.
+4. Restart your shell (or `source` the file you edited).
 
-3. Restart your shell (or `source ~/.bashrc`).
+5. `cd` into any git repo and run `wt`.
 
-4. `cd` into any git repo and run `wt`.
+### Linux (Debian/Ubuntu)
+
+```bash
+sudo apt install fzf jq
+# optional: sudo apt install gh && gh auth login
+```
+
+Other distros: `sudo dnf install fzf jq` (Fedora/RHEL) or `sudo pacman -S fzf jq` (Arch). Bash 4+ is standard on modern Linux distros — no extra work needed.
+
+### macOS
+
+macOS ships bash 3.2 only (frozen at the last GPLv2 release), so a newer bash is required:
+
+```bash
+brew install bash fzf jq
+# optional: brew install gh && gh auth login   # for the PR column
+```
+
+Confirm the Homebrew bash is first on `PATH`:
+
+```bash
+bash --version       # should print 5.x (or at least 4.x)
+which bash           # should resolve under /opt/homebrew/bin or /usr/local/bin
+```
+
+If `bash --version` still prints 3.2.x, add Homebrew's bin to `PATH` ahead of `/bin` in your shell init. `wt-picker.sh` uses `#!/usr/bin/env bash`, so it'll pick up whichever `bash` is first.
+
+The `source ~/repos/wt/wt.bash` line works the same from `~/.zshrc` (macOS's default shell) as from `~/.bashrc` — no manual edits to `wt.bash` needed.
 
 ## Usage
 
@@ -107,7 +136,6 @@ Branch `feat/gt-9395/use-stripe-foo` creates a worktree at `.worktrees/feat-gt-9
 - Single selection only. No multi-pick.
 - `gh pr list --limit 200` caps PR data at 200 PRs — branches whose PRs are outside that window show `—`. Bump the limit in `wt-picker.sh` if your repo has more.
 - Branch names longer than 49 characters are truncated in the picker display, and the script refuses to resolve them rather than guess. If you hit this, the fix is to add a second hidden column carrying the un-truncated name.
-- zsh users: `${BASH_SOURCE[0]}` in `wt.bash` needs to be replaced with `${(%):-%N}` to work natively.
 
 ## License
 
