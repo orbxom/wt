@@ -87,10 +87,7 @@ while IFS= read -r line; do
   esac
 done < <(git worktree list --porcelain)
 
-CURRENT_BRANCH=""
-if git -C "$PRIMARY_ROOT" symbolic-ref --quiet --short HEAD >/dev/null 2>&1; then
-  CURRENT_BRANCH=$(git -C "$PRIMARY_ROOT" symbolic-ref --short HEAD)
-fi
+CURRENT_BRANCH=$(git -C "$PRIMARY_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null) || CURRENT_BRANCH=""
 
 list_branches() {
   # Prints one line per local branch, newest-committerdate first:
@@ -129,7 +126,8 @@ build_pr_map() {
 
 compose_rows() {
   # Reads "<branch>\t<age>" lines from list_branches and prints
-  # "<display>\t<hidden_path>" rows.
+  # "<display>\t<hidden_path>\t<hidden_branch>" rows. fzf shows column 1 only;
+  # path and branch ride along so we never have to re-parse the display column.
   local branch age wt_marker pr_cell display path star branch_for_display
   while IFS=$'\t' read -r branch age; do
     path="${WORKTREE_MAP[$branch]:-}"
@@ -142,7 +140,7 @@ compose_rows() {
     fi
     display=$(printf '%-50s  %-14s  %-3s  %-16s' \
       "$branch_for_display" "$age" "$wt_marker" "$pr_cell")
-    printf '%s\t%s\n' "$display" "$path"
+    printf '%s\t%s\t%s\n' "$display" "$path" "$branch"
   done < <(list_branches)
 }
 
@@ -194,25 +192,9 @@ PICKED=$(echo "$ROWS" | fzf \
   --prompt='worktree › ' \
   --header="${HEADER_COLS}"$'\n'"${HEADER_LEGEND}") || exit $?
 
-# PICKED is "<display>\t<hidden_path>". Recover the branch name from <display>:
-#   <display> = "<star><branch>" padded to 50 then "  <age>  <wt>  <pr>".
-# The branch text starts at column 0 after stripping "* " or "  " and trailing
-# spaces/ellipsis. We need the original branch — re-extract from the row.
-DISPLAY="${PICKED%$'\t'*}"
-PATH_HINT="${PICKED##*$'\t'}"
+IFS=$'\t' read -r _ PATH_HINT BRANCH <<<"$PICKED"
 if [ -n "$PATH_HINT" ]; then
   echo "$PATH_HINT"
   exit 0
 fi
-
-# No pre-existing worktree — derive branch from display column.
-# Strip leading "* " or "  ", then strip trailing padding/ellipsis.
-NAME_FIELD="${DISPLAY:0:50}"            # first 50 chars (the branch column)
-NAME_FIELD="${NAME_FIELD#"${NAME_FIELD%%[![:space:]]*}"}"  # ltrim
-NAME_FIELD="${NAME_FIELD%"${NAME_FIELD##*[![:space:]]}"}"  # rtrim
-NAME_FIELD="${NAME_FIELD#\* }"          # drop current-branch marker if present
-if [[ "$NAME_FIELD" == *"…" ]]; then
-  echo "branch name was truncated in display; cannot resolve. (this is a wt-picker.sh bug)" >&2
-  exit 1
-fi
-resolve_target "$NAME_FIELD"
+resolve_target "$BRANCH"

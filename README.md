@@ -115,8 +115,6 @@ Inside the picker:
 | `wt-picker.sh` | The whole picker. Prints absolute target path on stdout, exits 0 on success, 130 on user cancel, 1 on error. |
 | `wt-picker.test.sh` | Bash test harness for the picker. ~13 tests; runnable as `bash wt-picker.test.sh`. |
 | `wt.bash` | The shell function. Sources cleanly into bash. |
-| `docs/design.md` | The design spec (architecture, resolve table, row format, dependencies). |
-| `docs/plan.md` | The implementation plan that built this. Useful as a TDD walkthrough. |
 
 ## Running the tests
 
@@ -135,7 +133,7 @@ Branch `feat/gt-9395/use-stripe-foo` creates a worktree at `.worktrees/feat-gt-9
 - One repo at a time. `wt` runs against whichever repo `git rev-parse --show-toplevel` finds from your current `pwd`.
 - Single selection only. No multi-pick.
 - `gh pr list --limit 200` caps PR data at 200 PRs — branches whose PRs are outside that window show `—`. Bump the limit in `wt-picker.sh` if your repo has more.
-- Branch names longer than 49 characters are truncated in the picker display, and the script refuses to resolve them rather than guess. If you hit this, the fix is to add a second hidden column carrying the un-truncated name.
+- Branch names longer than 49 characters are truncated in the picker display (with a trailing `…`). The original branch name is still carried internally, so resolution works correctly.
 
 ## License
 

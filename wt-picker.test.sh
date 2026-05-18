@@ -263,4 +263,16 @@ test_no_pr_flag_runs_without_gh() {
   assert_eq "$out" "$repo/.worktrees/nogh" "no-pr path"           || return 1
 }
 
+test_pick_long_branch_name_resolves() {
+  local repo out rc longname
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  longname="feat/gt-99999/a-very-long-descriptive-branch-name-here"
+  git -C "$repo" branch "$longname"
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --pick-by-branch "$longname") ; rc=$?
+  assert_exit_code "$rc" 0 "long-name rc"                                                 || return 1
+  assert_eq "$out" "$repo/.worktrees/feat-gt-99999-a-very-long-descriptive-branch-name-here" \
+    "long-name path"                                                                      || return 1
+}
+
 run_all_tests
