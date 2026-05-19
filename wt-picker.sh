@@ -167,32 +167,40 @@ resolve_target() {
 }
 
 if [ -n "$PICK_BY_BRANCH" ]; then
-  resolve_target "$PICK_BY_BRANCH"
-  exit $?
+  declare -gA PR_MAP=()
+  PICKED=$(compose_rows | awk -F'\t' -v b="$PICK_BY_BRANCH" '$3==b {print; exit}')
+  if [ -z "$PICKED" ]; then
+    echo "branch not found: $PICK_BY_BRANCH" >&2
+    exit 1
+  fi
+else
+  build_pr_map
+
+  ROWS=$(compose_rows)
+  if [ -z "$ROWS" ]; then
+    echo "no branches" >&2
+    exit 1
+  fi
+
+  HEADER_COLS=$(printf '%-50s  %-14s  %-3s  %-16s' "BRANCH" "AGE" "WT" "PR")
+  HEADER_LEGEND='● = worktree exists  ·  * = current branch  ·  ↑/↓ select  ·  Enter open  ·  Esc cancel'
+
+  PICKED=$(echo "$ROWS" | fzf \
+    --ansi \
+    --delimiter=$'\t' \
+    --with-nth=1 \
+    --nth=1 \
+    --layout=reverse \
+    --height=80% \
+    --prompt='worktree › ' \
+    --header="${HEADER_COLS}"$'\n'"${HEADER_LEGEND}") || exit $?
 fi
 
-build_pr_map
-
-ROWS=$(compose_rows)
-if [ -z "$ROWS" ]; then
-  echo "no branches" >&2
-  exit 1
-fi
-
-HEADER_COLS=$(printf '%-50s  %-14s  %-3s  %-16s' "BRANCH" "AGE" "WT" "PR")
-HEADER_LEGEND='● = worktree exists  ·  * = current branch  ·  ↑/↓ select  ·  Enter open  ·  Esc cancel'
-
-PICKED=$(echo "$ROWS" | fzf \
-  --ansi \
-  --delimiter=$'\t' \
-  --with-nth=1 \
-  --nth=1 \
-  --layout=reverse \
-  --height=80% \
-  --prompt='worktree › ' \
-  --header="${HEADER_COLS}"$'\n'"${HEADER_LEGEND}") || exit $?
-
-IFS=$'\t' read -r _ PATH_HINT BRANCH <<<"$PICKED"
+# Parse tab-separated row by hand: `IFS=$'\t' read` would collapse adjacent
+# tabs (tab is IFS-whitespace), folding the empty path field into its neighbor.
+rest="${PICKED#*$'\t'}"
+PATH_HINT="${rest%%$'\t'*}"
+BRANCH="${rest#*$'\t'}"
 if [ -n "$PATH_HINT" ]; then
   echo "$PATH_HINT"
   exit 0
