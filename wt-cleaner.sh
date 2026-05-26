@@ -109,6 +109,33 @@ for branch in "${!WORKTREE_MAP[@]}"; do
   ELIGIBLE_PATHS+=("$path")
 done
 
+compute_status() {
+  local branch="$1"
+  local path="${WORKTREE_MAP[$branch]:-}"
+  if [ -z "$path" ]; then
+    echo "clean"
+    return 0
+  fi
+  local parts="" upstream ahead behind dirty
+  upstream=$(git -C "$path" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+  if [ -n "$upstream" ]; then
+    ahead=$(git -C "$path"  rev-list --count "$upstream..HEAD" 2>/dev/null || echo 0)
+    behind=$(git -C "$path" rev-list --count "HEAD..$upstream" 2>/dev/null || echo 0)
+    [ "$ahead"  -gt 0 ] && parts="$parts ↑$ahead"
+    [ "$behind" -gt 0 ] && parts="$parts ↓$behind"
+  fi
+  dirty=$(git -C "$path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  [ "$dirty" -gt 0 ] && parts="$parts +$dirty"
+  parts="${parts# }"
+  [ -z "$parts" ] && parts="clean"
+  echo "$parts"
+}
+
+if [ -n "$DEBUG_STATUS" ]; then
+  compute_status "$DEBUG_STATUS"
+  exit 0
+fi
+
 # If --pick-branches was given, resolve each name to an eligible path.
 # This runs before the "nothing to clean" guard so that picking a primary-only
 # branch (e.g. main) produces "not an eligible" rather than "no worktrees".

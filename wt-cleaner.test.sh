@@ -234,4 +234,76 @@ test_all_failures_exit_one() {
   assert_exit_code "$rc" 1 "all-fail rc" || return 1
 }
 
+test_debug_status_clean() {
+  local repo out
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --debug-status feat)
+  assert_eq "$out" "clean" "status-clean" || return 1
+}
+
+test_debug_status_dirty() {
+  local repo out
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  echo "untracked" > "$repo/.worktrees/feat/junk.txt"
+  echo "modified"  > "$repo/.worktrees/feat/scratch.txt"
+  git -C "$repo/.worktrees/feat" add scratch.txt >/dev/null
+  git -C "$repo/.worktrees/feat" commit -q -m "track scratch"
+  echo "changed"   > "$repo/.worktrees/feat/scratch.txt"
+  # Now: 1 untracked (junk.txt) + 1 modified (scratch.txt) = 2.
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --debug-status feat)
+  assert_eq "$out" "+2" "status-dirty" || return 1
+}
+
+test_debug_status_ahead() {
+  local repo out remote
+  repo=$(new_repo)
+  remote=$(mktemp -d)
+  trap "rm -rf '$repo' '$remote'" RETURN
+  git -C "$remote" init -q --bare
+  git -C "$repo" remote add origin "$remote"
+  git -C "$repo" push -q -u origin main
+  git -C "$repo" branch feat main
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  git -C "$repo/.worktrees/feat" branch --set-upstream-to=origin/main feat >/dev/null
+  git -C "$repo/.worktrees/feat" commit -q --allow-empty -m "ahead 1"
+  git -C "$repo/.worktrees/feat" commit -q --allow-empty -m "ahead 2"
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --debug-status feat)
+  assert_eq "$out" "↑2" "status-ahead" || return 1
+}
+
+test_debug_status_ahead_and_dirty() {
+  local repo out remote
+  repo=$(new_repo)
+  remote=$(mktemp -d)
+  trap "rm -rf '$repo' '$remote'" RETURN
+  git -C "$remote" init -q --bare
+  git -C "$repo" remote add origin "$remote"
+  git -C "$repo" push -q -u origin main
+  git -C "$repo" branch feat main
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  git -C "$repo/.worktrees/feat" branch --set-upstream-to=origin/main feat >/dev/null
+  git -C "$repo/.worktrees/feat" commit -q --allow-empty -m "ahead 1"
+  echo "x" > "$repo/.worktrees/feat/u.txt"
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --debug-status feat)
+  assert_eq "$out" "↑1 +1" "status-combined" || return 1
+}
+
+test_debug_status_no_upstream() {
+  local repo out
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  echo "x" > "$repo/.worktrees/feat/u.txt"
+  # No upstream set → ahead/behind not reported, only dirty count.
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --debug-status feat)
+  assert_eq "$out" "+1" "status-no-upstream" || return 1
+}
+
 run_all_tests
