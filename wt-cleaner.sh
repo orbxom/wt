@@ -305,10 +305,12 @@ declare -i SUCCESS_COUNT=0
 declare -i FAIL_COUNT=0
 declare -i TOTAL_FREED_BYTES=0
 
+TOTAL=${#SELECTED_PATHS[@]}
 for i in "${!SELECTED_PATHS[@]}"; do
   path="${SELECTED_PATHS[$i]}"
   branch="${SELECTED_BRANCHES[$i]}"
   size=$(dir_bytes "$path")
+  printf '[%d/%d] %s (%s)\n' "$(( i + 1 ))" "$TOTAL" "$branch" "$(fmt_size "$size")" >&2
   if err=$(git -C "$PRIMARY_ROOT" worktree remove --force --force "$path" 2>&1); then
     SUCCESS_COUNT=$(( SUCCESS_COUNT + 1 ))
     TOTAL_FREED_BYTES=$(( TOTAL_FREED_BYTES + size ))

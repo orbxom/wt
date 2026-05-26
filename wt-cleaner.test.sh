@@ -387,6 +387,21 @@ test_confirm_eof_aborts() {
   [ -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat deleted despite EOF"; return 1; }
 }
 
+test_delete_loop_emits_per_item_progress() {
+  local repo err
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-a
+  git -C "$repo" branch feat-b
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-a" feat-a
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-b" feat-b
+  err=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-a,feat-b 2>&1 >/dev/null)
+  assert_contains "$err" "[1/2]"  "first-item progress"  || return 1
+  assert_contains "$err" "[2/2]"  "second-item progress" || return 1
+  assert_contains "$err" "feat-a" "first branch named"   || return 1
+  assert_contains "$err" "feat-b" "second branch named"  || return 1
+}
+
 test_confirm_prompt_shows_size_and_count() {
   local repo err
   repo=$(new_repo)
