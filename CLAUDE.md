@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A single user-facing command, `wt`, that lists local git branches in the current repo and lets the user fzf-pick one. Selecting a branch `cd`s into its worktree (creating one under `.worktrees/<flat-name>` if it doesn't exist yet). The whole tool is three files plus docs.
+A single user-facing command, `wt`, with two modes. Default mode lists local git branches in the current repo and lets the user fzf-pick one; selecting a branch `cd`s into its worktree (creating one under `.worktrees/<flat-name>` if it doesn't exist yet). Cleanup mode (`wt --clean` or `wt -c`) lets the user multi-select existing worktrees to delete in one pass.
 
 ## Commands
 
@@ -25,9 +25,14 @@ Three files form a pipeline:
 ```
 wt.bash  ──sources──►  wt() shell function
                           │
-                          └─ captures stdout of ──►  wt-picker.sh  ──prints absolute path──►  cd $target
-                                                          │
-                                                          └─ fzf for selection (or --pick-by-branch for tests)
+                          ├─ if $1 in (-c, --clean, --cleanup): ──►  wt-cleaner.sh
+                          │                                            (prints path; cleans worktrees)
+                          │
+                          └─ else: ──────────────────────────────►  wt-picker.sh
+                                                                       (prints path; picks/creates worktree)
+                                                                            │
+                                                                            ▼
+                                                                       cd $target
 ```
 
 - `wt.bash` is sourced from `~/.bashrc` / `~/.zshrc`. It auto-detects bash vs zsh to resolve its own directory (`BASH_SOURCE` vs `(%):-%N`), then defines `wt()` to invoke the sibling `wt-picker.sh` and `cd` into whatever path it prints.
@@ -51,6 +56,14 @@ The fzf row layout is `<display-column>\t<hidden-path>`. The display column is f
 ### `--pick-by-branch <name>` is the test seam
 
 Tests never touch fzf or `gh`. They drive the resolver directly via this flag, which short-circuits `build_pr_map`, `compose_rows`, and the fzf invocation. When changing the picker, prefer extending the seam over adding a second one.
+
+### Invariants enforced by `wt-cleaner.sh`
+
+1. **Primary worktree is never deleted.** It's excluded from enumeration up front.
+2. **Branch refs are never deleted.** Only worktree directories. `git worktree remove --force --force` is the only deletion call.
+3. **Self-delete redirects to primary.** If `$PWD` is one of the picked paths, the cleaner cds itself to `PRIMARY_ROOT` before running git worktree remove, and prints `PRIMARY_ROOT` on stdout so the parent shell lands somewhere real. Covered by `test_picking_current_worktree_redirects_to_primary`.
+4. **One row's failure does not abort the batch.** Each `git worktree remove` is per-iteration try/catch; failures are recorded for the final summary. Exit 0 if any row succeeded, exit 1 only if every row failed.
+5. **Test seam flags (`--yes`, `--pick-branches`, `--debug-status`) are clearly labeled in `--help`.** They are not part of the user-facing CLI and not documented in `README.md`.
 
 ## When making changes
 

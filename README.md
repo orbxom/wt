@@ -97,6 +97,18 @@ Inside the picker:
 | `Enter` | open the selected branch — cd into existing worktree, or create one and cd |
 | `Esc` / `Ctrl-C` | cancel; shell stays put |
 
+### Cleaning up worktrees
+
+```
+wt --clean     # interactive multi-select; or `wt -c` / `wt --cleanup`
+```
+
+Lists every worktree under `.worktrees/` (except the primary repo). Tab-select the ones to delete, hit Enter, confirm at the size prompt (defaults to Yes).
+
+The cleaner uses `git worktree remove --force --force`, which handles dirty trees and locked worktrees in a single pass. Branch refs are left alone — you can `wt <branch>` to recreate the worktree later.
+
+If the worktree you're currently in is one of the deletions, the cleaner moves you back to the primary repo before removing it.
+
 ## How it works
 
 1. **Enumerate branches.** `git for-each-ref --sort=-committerdate refs/heads/` lists every local branch newest-first.
