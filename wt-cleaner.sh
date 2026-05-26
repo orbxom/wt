@@ -6,13 +6,10 @@
 #                     [--debug-status <branch>] [-h|--help]
 set -euo pipefail
 
-if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
-  echo "wt-cleaner.sh requires bash 4 or newer (associative arrays)." >&2
-  echo "  current: ${BASH_VERSION:-unknown}" >&2
-  echo "  macOS:   brew install bash   then re-run with the homebrew bash" >&2
-  echo "  Linux:   your distro should already have bash 4+; check your PATH" >&2
-  exit 1
-fi
+_WT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-lib.sh"
+[ -r "$_WT_LIB" ] || { echo "wt-lib.sh missing next to $(basename "$0")" >&2; exit 1; }
+source "$_WT_LIB"
+unset _WT_LIB
 
 NO_PR=0
 YES=0
@@ -52,48 +49,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-hint_for() {
-  local tool="$1"
-  if command -v brew >/dev/null 2>&1; then
-    echo "brew install $tool"
-  elif command -v apt >/dev/null 2>&1; then
-    echo "sudo apt install $tool"
-  elif command -v dnf >/dev/null 2>&1; then
-    echo "sudo dnf install $tool"
-  elif command -v pacman >/dev/null 2>&1; then
-    echo "sudo pacman -S $tool"
-  else
-    echo "(install $tool with your package manager)"
-  fi
-}
-
-need() {
-  command -v "$1" >/dev/null 2>&1 || {
-    echo "$1 not found. install with: $(hint_for "$1")" >&2
-    exit 1
-  }
-}
 need fzf
 need jq
 
-PRIMARY_ROOT=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
-  echo "not inside a git repo" >&2
-  exit 1
-}
-PRIMARY_ROOT=$(dirname "$PRIMARY_ROOT")
-
-declare -A WORKTREE_MAP
-current_path=""
-while IFS= read -r line; do
-  case "$line" in
-    "worktree "*) current_path="${line#worktree }" ;;
-    "branch refs/heads/"*)
-      br="${line#branch refs/heads/}"
-      WORKTREE_MAP["$br"]="$current_path"
-      ;;
-    "")  current_path="" ;;
-  esac
-done < <(git worktree list --porcelain)
+resolve_primary_root
+build_worktree_map
 
 declare -a ELIGIBLE_BRANCHES=()
 declare -a ELIGIBLE_PATHS=()
@@ -132,30 +92,6 @@ if [ -n "$DEBUG_STATUS" ]; then
   compute_status "${WORKTREE_MAP[$DEBUG_STATUS]:-}"
   exit 0
 fi
-
-build_pr_map() {
-  declare -gA PR_MAP=()
-  if [ "$NO_PR" -eq 1 ]; then return 0; fi
-  if ! command -v gh >/dev/null 2>&1; then
-    echo "gh not installed; PR column will be '-'. Use --no-pr to silence." >&2
-    return 0
-  fi
-  local json
-  if ! json=$(gh pr list --state all --limit 200 \
-                --json number,state,isDraft,headRefName 2>/dev/null); then
-    echo "gh failed (auth?); PR column will be '-'." >&2
-    return 0
-  fi
-  local ref num state draft cell
-  while IFS=$'\t' read -r ref num state draft; do
-    if [ "$draft" = "true" ]; then
-      cell="#$num Draft"
-    else
-      cell="#$num $state"
-    fi
-    PR_MAP["$ref"]="$cell"
-  done < <(echo "$json" | jq -r '.[] | [.headRefName, .number, .state, .isDraft] | @tsv')
-}
 
 compose_rows() {
   # Prints "<display>\t<hidden_path>\t<hidden_branch>" per eligible worktree,
@@ -201,7 +137,7 @@ resolve_from_pick_branches() {
 }
 
 resolve_from_fzf() {
-  build_pr_map
+  build_pr_map "$NO_PR"
   local ROWS PICKED HEADER_COLS HEADER_LEGEND _display path branch
   ROWS=$(compose_rows)
   if [ -z "$ROWS" ]; then
@@ -210,16 +146,7 @@ resolve_from_fzf() {
   fi
   HEADER_COLS=$(printf '%-50s  %-14s  %-18s  %-16s' "BRANCH" "AGE" "STATUS" "PR")
   HEADER_LEGEND='Tab select  ·  Enter confirm  ·  Esc cancel'
-  PICKED=$(echo "$ROWS" | fzf \
-    --multi \
-    --ansi \
-    --delimiter=$'\t' \
-    --with-nth=1 \
-    --nth=1 \
-    --layout=reverse \
-    --height=80% \
-    --prompt='clean › ' \
-    --header="${HEADER_COLS}"$'\n'"${HEADER_LEGEND}") || exit $?
+  PICKED=$(echo "$ROWS" | run_fzf --multi 'clean › ' "$HEADER_COLS" "$HEADER_LEGEND") || exit $?
 
   if [ -z "$PICKED" ]; then
     echo "nothing selected" >&2

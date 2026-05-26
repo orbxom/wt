@@ -24,7 +24,7 @@ Running a single test: tests are plain `test_*` shell functions in `wt-picker.te
 
 ## Architecture
 
-Four files form a pipeline:
+Five files form a pipeline:
 
 ```
 wt.bash  ──sources──►  wt() shell function
@@ -40,7 +40,8 @@ wt.bash  ──sources──►  wt() shell function
 ```
 
 - `wt.bash` is sourced from `~/.bashrc` / `~/.zshrc`. It auto-detects bash vs zsh to resolve its own directory (`BASH_SOURCE` vs `(%):-%N`), then defines `wt()` to invoke the sibling `wt-picker.sh` and `cd` into whatever path it prints.
-- `wt-picker.sh` does everything else. The function exists *only* because a child process can't change the parent shell's `cwd`.
+- `wt-picker.sh` and `wt-cleaner.sh` both `source wt-lib.sh` (the bash 4 check, `need`/`hint_for`, `resolve_primary_root`, `build_worktree_map`, `build_pr_map`, and the `run_fzf` flag-set wrapper all live there). Each script keeps only its own logic; the shared plumbing lives in one place.
+- The shell function exists *only* because a child process can't change the parent shell's `cwd`.
 
 ### Invariants enforced by `wt-picker.sh`
 
@@ -51,7 +52,7 @@ These are load-bearing; don't break them without updating the tests:
 3. **Target-path conflicts fail loudly.** If `.worktrees/<flat>` exists but isn't a registered worktree, the script exits 1 rather than clobbering. Covered by `test_pick_new_branch_refuses_when_target_occupied`.
 4. **Symlink helper is opt-in.** After `git worktree add`, if `$PRIMARY_ROOT/.setup/shared/symlink-settings.sh` exists and is executable, it's invoked with `--target <new-worktree>`. Absent → silent skip (no warning). Failure inside the helper → stderr warning but stdout / exit 0 are still good (the worktree itself is usable).
 5. **Exit codes are part of the contract.** `0` success, `130` user cancel (fzf Esc/Ctrl-C — propagated so the shell function returns cleanly), `1` error, `2` unknown flag. Tests assert these.
-6. **Bash 4+ required** because of associative arrays (`WORKTREE_MAP`, `PR_MAP`). The version check at the top of `wt-picker.sh` prints platform-specific install hints. macOS's stock `/bin/bash` is 3.2; users need `brew install bash` and it must be first on `PATH`.
+6. **Bash 4+ required** because of associative arrays (`WORKTREE_MAP`, `PR_MAP`). The version check runs at the top of `wt-lib.sh` when sourced and prints platform-specific install hints. macOS's stock `/bin/bash` is 3.2; users need `brew install bash` and it must be first on `PATH`.
 
 ### Display column ↔ branch name recovery
 
