@@ -183,11 +183,22 @@ fmt_size() {
   }'
 }
 
-# Without --yes the user must confirm interactively (added in a later task).
-# For now --yes is a hard requirement so the script never silently deletes.
+# Confirmation prompt (skipped by --yes).
 if [ "$YES" -ne 1 ]; then
-  echo "interactive mode not implemented yet; pass --yes to skip confirmation" >&2
-  exit 1
+  total_bytes=0
+  for path in "${SELECTED_PATHS[@]}"; do
+    total_bytes=$(( total_bytes + $(dir_bytes "$path") ))
+  done
+  printf 'Delete %d worktrees (%s)? [Y/n] ' \
+    "${#SELECTED_PATHS[@]}" "$(fmt_size "$total_bytes")" >&2
+  if ! read -r REPLY; then
+    echo "" >&2
+    exit 130
+  fi
+  case "$REPLY" in
+    ""|y|Y|yes|YES) : ;;
+    *) exit 130 ;;
+  esac
 fi
 
 # Detect whether $PWD is one of the picked paths (self-delete case).

@@ -338,4 +338,66 @@ test_picking_non_current_worktree_keeps_pwd() {
   [ ! -d "$repo/.worktrees/feat-other" ] || { echo "  FAIL feat-other survived"; return 1; }
 }
 
+test_confirm_yes_proceeds() {
+  local repo rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  (cd "$repo" && echo "y" | "$SCRIPT_UNDER_TEST" --pick-branches feat) >/dev/null 2>&1
+  rc=$?
+  assert_exit_code "$rc" 0 "confirm-yes rc"            || return 1
+  [ ! -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat survived"; return 1; }
+}
+
+test_confirm_empty_input_proceeds() {
+  local repo rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  (cd "$repo" && echo "" | "$SCRIPT_UNDER_TEST" --pick-branches feat) >/dev/null 2>&1
+  rc=$?
+  assert_exit_code "$rc" 0 "confirm-empty rc"          || return 1
+  [ ! -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat survived"; return 1; }
+}
+
+test_confirm_no_aborts() {
+  local repo rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  (cd "$repo" && echo "n" | "$SCRIPT_UNDER_TEST" --pick-branches feat) >/dev/null 2>&1
+  rc=$?
+  assert_exit_code "$rc" 130 "confirm-no rc"            || return 1
+  [ -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat deleted despite no"; return 1; }
+}
+
+test_confirm_eof_aborts() {
+  local repo rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  # Close stdin so `read` returns non-zero immediately.
+  (cd "$repo" && "$SCRIPT_UNDER_TEST" --pick-branches feat </dev/null) >/dev/null 2>&1
+  rc=$?
+  assert_exit_code "$rc" 130 "confirm-eof rc"           || return 1
+  [ -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat deleted despite EOF"; return 1; }
+}
+
+test_confirm_prompt_shows_size_and_count() {
+  local repo err
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-a
+  git -C "$repo" branch feat-b
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-a" feat-a
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-b" feat-b
+  err=$(cd "$repo" && echo "y" | "$SCRIPT_UNDER_TEST" --pick-branches feat-a,feat-b 2>&1 >/dev/null)
+  assert_contains "$err" "Delete 2 worktrees" "prompt count" || return 1
+  assert_contains "$err" "[Y/n]"              "prompt default" || return 1
+}
+
 run_all_tests
