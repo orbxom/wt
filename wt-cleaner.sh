@@ -2,7 +2,7 @@
 # wt-cleaner.sh — interactive worktree cleaner. Prints the path the parent shell
 # should cd to on stdout.
 #
-# Usage: wt-cleaner.sh [--no-pr] [--no-color] [--yes] [--pick-branches <a,b,c>]
+# Usage: wt-cleaner.sh [--no-pr] [--yes] [--pick-branches <a,b,c>]
 #                     [--debug-status <branch>] [-h|--help]
 set -euo pipefail
 
@@ -15,7 +15,6 @@ if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
 fi
 
 NO_PR=0
-NO_COLOR=0
 YES=0
 PICK_BRANCHES=""
 DEBUG_STATUS=""
@@ -26,7 +25,6 @@ Usage: wt-cleaner.sh [options]
 
 Options:
   --no-pr                  Skip PR-status lookups (faster startup).
-  --no-color               Disable ANSI colors.
   -h, --help               Show this help and exit.
 
 Test seam (not for normal use):
@@ -42,7 +40,6 @@ EOF
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-pr)            NO_PR=1; shift ;;
-    --no-color)         NO_COLOR=1; shift ;;
     --yes)              YES=1; shift ;;
     --pick-branches)
       [ $# -ge 2 ] || { echo "--pick-branches requires an argument" >&2; exit 2; }
@@ -85,7 +82,6 @@ PRIMARY_ROOT=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null
 }
 PRIMARY_ROOT=$(dirname "$PRIMARY_ROOT")
 
-# Build branch -> absolute-path map from `git worktree list --porcelain`.
 declare -A WORKTREE_MAP
 current_path=""
 while IFS= read -r line; do
@@ -99,24 +95,25 @@ while IFS= read -r line; do
   esac
 done < <(git worktree list --porcelain)
 
-# Eligible = everything except the primary worktree.
 declare -a ELIGIBLE_BRANCHES=()
 declare -a ELIGIBLE_PATHS=()
+declare -A BRANCH_TO_PATH=()
 for branch in "${!WORKTREE_MAP[@]}"; do
   path="${WORKTREE_MAP[$branch]}"
   if [ "$path" = "$PRIMARY_ROOT" ]; then continue; fi
   ELIGIBLE_BRANCHES+=("$branch")
   ELIGIBLE_PATHS+=("$path")
+  BRANCH_TO_PATH["$branch"]="$path"
 done
 
 compute_status() {
-  local branch="$1"
-  local path="${WORKTREE_MAP[$branch]:-}"
+  local path="$1"
   if [ -z "$path" ]; then
     echo "clean"
     return 0
   fi
-  local parts="" upstream ahead behind dirty
+  local parts="" upstream ahead behind
+  local -a dirty_lines=()
   upstream=$(git -C "$path" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
   if [ -n "$upstream" ]; then
     ahead=$(git -C "$path"  rev-list --count "$upstream..HEAD" 2>/dev/null || echo 0)
@@ -124,15 +121,15 @@ compute_status() {
     [ "$ahead"  -gt 0 ] && parts="$parts ↑$ahead"
     [ "$behind" -gt 0 ] && parts="$parts ↓$behind"
   fi
-  dirty=$(git -C "$path" status --porcelain 2>/dev/null | wc -l | tr -d ' ' || echo 0)
-  [ "$dirty" -gt 0 ] && parts="$parts +$dirty"
+  mapfile -t dirty_lines < <(git -C "$path" status --porcelain 2>/dev/null || true)
+  [ "${#dirty_lines[@]}" -gt 0 ] && parts="$parts +${#dirty_lines[@]}"
   parts="${parts# }"
   [ -z "$parts" ] && parts="clean"
   echo "$parts"
 }
 
 if [ -n "$DEBUG_STATUS" ]; then
-  compute_status "$DEBUG_STATUS"
+  compute_status "${WORKTREE_MAP[$DEBUG_STATUS]:-}"
   exit 0
 fi
 
@@ -163,20 +160,21 @@ build_pr_map() {
 compose_rows() {
   # Prints "<display>\t<hidden_path>\t<hidden_branch>" per eligible worktree,
   # sorted oldest-first by committerdate.
-  local branch path status_str pr_cell display branch_for_display age ts
+  local branch path status_str pr_cell display branch_for_display age ts log_out
   local -a sortable=()
   for i in "${!ELIGIBLE_BRANCHES[@]}"; do
     branch="${ELIGIBLE_BRANCHES[$i]}"
     path="${ELIGIBLE_PATHS[$i]}"
-    ts=$(git -C "$path" log -1 --format='%ct' 2>/dev/null || echo 0)
+    log_out=$(git -C "$path" log -1 --format='%ct%x09%cr' 2>/dev/null || echo $'0\t?')
+    ts="${log_out%%$'\t'*}"
+    age="${log_out#*$'\t'}"
     # Pad timestamp to a fixed width so lexicographic sort is numeric-correct.
-    sortable+=("$(printf '%012d\t%s\t%s\n' "$ts" "$branch" "$path")")
+    sortable+=("$(printf '%012d\t%s\t%s\t%s\n' "$ts" "$age" "$branch" "$path")")
   done
   if [ "${#sortable[@]}" -eq 0 ]; then return 0; fi
-  printf '%s\n' "${sortable[@]}" | sort | while IFS=$'\t' read -r _ts branch path; do
-    status_str=$(compute_status "$branch")
+  printf '%s\n' "${sortable[@]}" | sort | while IFS=$'\t' read -r _ts age branch path; do
+    status_str=$(compute_status "$path")
     pr_cell="${PR_MAP[$branch]:--}"
-    age=$(git -C "$path" log -1 --format='%cr' 2>/dev/null || echo "?")
     branch_for_display="$branch"
     if [ ${#branch_for_display} -gt 50 ]; then
       branch_for_display="${branch_for_display:0:49}…"
@@ -187,30 +185,24 @@ compose_rows() {
   done
 }
 
-# If --pick-branches was given, resolve each name to an eligible path.
-# This runs before the "nothing to clean" guard so that picking a primary-only
-# branch (e.g. main) produces "not an eligible" rather than "no worktrees".
-declare -a SELECTED_PATHS=()
-declare -a SELECTED_BRANCHES=()
-if [ -n "$PICK_BRANCHES" ]; then
-  IFS=',' read -ra picks <<< "$PICK_BRANCHES"
+resolve_from_pick_branches() {
+  local picks_csv="$1" pick path
+  local -a picks=()
+  IFS=',' read -ra picks <<< "$picks_csv"
   for pick in "${picks[@]}"; do
-    found=0
-    for i in "${!ELIGIBLE_BRANCHES[@]}"; do
-      if [ "${ELIGIBLE_BRANCHES[$i]}" = "$pick" ]; then
-        SELECTED_PATHS+=("${ELIGIBLE_PATHS[$i]}")
-        SELECTED_BRANCHES+=("$pick")
-        found=1
-        break
-      fi
-    done
-    if [ "$found" -eq 0 ]; then
+    path="${BRANCH_TO_PATH[$pick]:-}"
+    if [ -z "$path" ]; then
       echo "not an eligible worktree to clean: $pick" >&2
       exit 1
     fi
+    SELECTED_PATHS+=("$path")
+    SELECTED_BRANCHES+=("$pick")
   done
-else
+}
+
+resolve_from_fzf() {
   build_pr_map
+  local ROWS PICKED HEADER_COLS HEADER_LEGEND _display path branch
   ROWS=$(compose_rows)
   if [ -z "$ROWS" ]; then
     echo "no worktrees to clean" >&2
@@ -234,24 +226,26 @@ else
     exit 130
   fi
 
-  while IFS= read -r row; do
-    rest="${row#*$'\t'}"
-    p="${rest%%$'\t'*}"
-    b="${rest#*$'\t'}"
-    SELECTED_PATHS+=("$p")
-    SELECTED_BRANCHES+=("$b")
+  # IFS=$'\t' read is safe here: every eligible branch has a worktree, so
+  # the path field is never empty. (The picker can't use this shape — its
+  # rows carry an empty path field for not-yet-worktreed branches, which
+  # adjacent tabs would collapse.)
+  while IFS=$'\t' read -r _display path branch; do
+    SELECTED_PATHS+=("$path")
+    SELECTED_BRANCHES+=("$branch")
   done <<< "$PICKED"
+}
+
+declare -a SELECTED_PATHS=()
+declare -a SELECTED_BRANCHES=()
+if [ -n "$PICK_BRANCHES" ]; then
+  resolve_from_pick_branches "$PICK_BRANCHES"
+else
+  resolve_from_fzf
 fi
 
-if [ "${#ELIGIBLE_BRANCHES[@]}" -eq 0 ]; then
-  echo "no worktrees to clean" >&2
-  exit 1
-fi
-
-# Cross-platform size helpers, used by both the confirmation prompt and the
-# delete loop's summary.
+# BSD and GNU `du` both support `-sk` — kilobytes, hence the `* 1024`.
 dir_bytes() {
-  # `du -sk` is available on both GNU and BSD; multiply by 1024 to get bytes.
   local kb
   kb=$(du -sk "$1" 2>/dev/null | awk '{print $1}')
   echo $(( ${kb:-0} * 1024 ))
@@ -266,14 +260,19 @@ fmt_size() {
   }'
 }
 
-# Confirmation prompt (skipped by --yes).
+# Size each selected worktree once; the delete loop reuses these for the
+# per-row `[i/N]` line so we don't run `du -sk` twice on GB-scale trees.
+declare -a SELECTED_SIZES=()
+declare -i TOTAL_SELECTED_BYTES=0
+for path in "${SELECTED_PATHS[@]}"; do
+  size=$(dir_bytes "$path")
+  SELECTED_SIZES+=("$size")
+  TOTAL_SELECTED_BYTES=$(( TOTAL_SELECTED_BYTES + size ))
+done
+
 if [ "$YES" -ne 1 ]; then
-  total_bytes=0
-  for path in "${SELECTED_PATHS[@]}"; do
-    total_bytes=$(( total_bytes + $(dir_bytes "$path") ))
-  done
   printf 'Delete %d worktrees (%s)? [Y/n] ' \
-    "${#SELECTED_PATHS[@]}" "$(fmt_size "$total_bytes")" >&2
+    "${#SELECTED_PATHS[@]}" "$(fmt_size "$TOTAL_SELECTED_BYTES")" >&2
   if ! read -r REPLY; then
     echo "" >&2
     exit 130
@@ -300,7 +299,6 @@ if [ "$SELF_DELETE" -eq 1 ]; then
   cd "$PRIMARY_ROOT"
 fi
 
-# Delete loop.
 declare -i SUCCESS_COUNT=0
 declare -i FAIL_COUNT=0
 declare -i TOTAL_FREED_BYTES=0
@@ -309,7 +307,7 @@ TOTAL=${#SELECTED_PATHS[@]}
 for i in "${!SELECTED_PATHS[@]}"; do
   path="${SELECTED_PATHS[$i]}"
   branch="${SELECTED_BRANCHES[$i]}"
-  size=$(dir_bytes "$path")
+  size="${SELECTED_SIZES[$i]}"
   printf '[%d/%d] %s (%s)\n' "$(( i + 1 ))" "$TOTAL" "$branch" "$(fmt_size "$size")" >&2
   if err=$(git -C "$PRIMARY_ROOT" worktree remove --force --force "$path" 2>&1); then
     SUCCESS_COUNT=$(( SUCCESS_COUNT + 1 ))

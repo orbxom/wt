@@ -150,18 +150,6 @@ test_unknown_branch_in_pick_branches_errors() {
   [ -d "$repo/.worktrees/real" ] || { echo "  FAIL real worktree disappeared"; return 1; }
 }
 
-test_deletes_selected_worktree() {
-  local repo out rc
-  repo=$(new_repo)
-  trap "rm -rf '$repo'" RETURN
-  git -C "$repo" branch feat-a
-  git -C "$repo" worktree add -q "$repo/.worktrees/feat-a" feat-a
-  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-a 2>/dev/null)
-  rc=$?
-  assert_exit_code "$rc" 0 "single-delete rc" || return 1
-  [ ! -d "$repo/.worktrees/feat-a" ] || { echo "  FAIL worktree still exists"; return 1; }
-}
-
 test_deletes_multiple_selected_worktrees() {
   local repo rc
   repo=$(new_repo)
@@ -338,28 +326,18 @@ test_picking_non_current_worktree_keeps_pwd() {
   [ ! -d "$repo/.worktrees/feat-other" ] || { echo "  FAIL feat-other survived"; return 1; }
 }
 
-test_confirm_yes_proceeds() {
-  local repo rc
-  repo=$(new_repo)
-  trap "rm -rf '$repo'" RETURN
-  git -C "$repo" branch feat
-  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
-  (cd "$repo" && echo "y" | "$SCRIPT_UNDER_TEST" --pick-branches feat) >/dev/null 2>&1
-  rc=$?
-  assert_exit_code "$rc" 0 "confirm-yes rc"            || return 1
-  [ ! -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat survived"; return 1; }
-}
-
-test_confirm_empty_input_proceeds() {
-  local repo rc
-  repo=$(new_repo)
-  trap "rm -rf '$repo'" RETURN
-  git -C "$repo" branch feat
-  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
-  (cd "$repo" && echo "" | "$SCRIPT_UNDER_TEST" --pick-branches feat) >/dev/null 2>&1
-  rc=$?
-  assert_exit_code "$rc" 0 "confirm-empty rc"          || return 1
-  [ ! -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat survived"; return 1; }
+test_confirm_yes_or_empty_proceeds() {
+  local input repo rc
+  for input in "y" ""; do
+    repo=$(new_repo)
+    git -C "$repo" branch feat
+    git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+    (cd "$repo" && echo "$input" | "$SCRIPT_UNDER_TEST" --pick-branches feat) >/dev/null 2>&1
+    rc=$?
+    assert_exit_code "$rc" 0 "confirm-input=${input:-<empty>} rc" || { rm -rf "$repo"; return 1; }
+    [ ! -d "$repo/.worktrees/feat" ] || { echo "  FAIL feat survived (input=${input:-<empty>})"; rm -rf "$repo"; return 1; }
+    rm -rf "$repo"
+  done
 }
 
 test_confirm_no_aborts() {
