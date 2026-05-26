@@ -86,4 +86,36 @@ test_unknown_flag_exits_two() {
   assert_contains "$out" "unknown" "--bogus stderr" || return 1
 }
 
+test_missing_fzf_exits_one_with_install_hint() {
+  if command -v fzf >/dev/null 2>&1 && { [ -x /usr/bin/fzf ] || [ -x /bin/fzf ]; }; then
+    echo "  SKIP (fzf in /usr/bin or /bin — can't isolate)"
+    return 0
+  fi
+  local out rc
+  out=$(PATH=/usr/bin:/bin "$SCRIPT_UNDER_TEST" --pick-branches foo 2>&1) ; rc=$?
+  assert_exit_code "$rc" 1 "fzf-missing rc"                    || return 1
+  assert_contains "$out" "fzf" "fzf-missing stderr"            || return 1
+  assert_contains "$out" "install" "fzf-missing install hint"  || return 1
+}
+
+test_missing_jq_exits_one_with_install_hint() {
+  if command -v jq >/dev/null 2>&1 && { [ -x /usr/bin/jq ] || [ -x /bin/jq ]; }; then
+    echo "  SKIP (jq in /usr/bin or /bin — can't isolate)"
+    return 0
+  fi
+  local out rc
+  out=$(PATH=/usr/bin:/bin "$SCRIPT_UNDER_TEST" --pick-branches foo 2>&1) ; rc=$?
+  assert_exit_code "$rc" 1 "jq-missing rc"            || return 1
+  assert_contains "$out" "jq" "jq-missing stderr"     || return 1
+}
+
+test_outside_git_repo_exits_one() {
+  local tmpdir out rc
+  tmpdir=$(mktemp -d)
+  out=$(cd "$tmpdir" && "$SCRIPT_UNDER_TEST" --pick-branches foo 2>&1) ; rc=$?
+  rm -rf "$tmpdir"
+  assert_exit_code "$rc" 1 "outside-repo rc"              || return 1
+  assert_contains "$out" "git repo" "outside-repo stderr" || return 1
+}
+
 run_all_tests

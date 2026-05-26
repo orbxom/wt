@@ -54,3 +54,33 @@ while [ $# -gt 0 ]; do
     *)                  echo "unknown flag: $1" >&2; exit 2 ;;
   esac
 done
+
+hint_for() {
+  local tool="$1"
+  if command -v brew >/dev/null 2>&1; then
+    echo "brew install $tool"
+  elif command -v apt >/dev/null 2>&1; then
+    echo "sudo apt install $tool"
+  elif command -v dnf >/dev/null 2>&1; then
+    echo "sudo dnf install $tool"
+  elif command -v pacman >/dev/null 2>&1; then
+    echo "sudo pacman -S $tool"
+  else
+    echo "(install $tool with your package manager)"
+  fi
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "$1 not found. install with: $(hint_for "$1")" >&2
+    exit 1
+  }
+}
+need fzf
+need jq
+
+PRIMARY_ROOT=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || {
+  echo "not inside a git repo" >&2
+  exit 1
+}
+PRIMARY_ROOT=$(dirname "$PRIMARY_ROOT")
