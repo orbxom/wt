@@ -248,8 +248,8 @@ if [ "${#ELIGIBLE_BRANCHES[@]}" -eq 0 ]; then
   exit 1
 fi
 
-# Cross-platform size helpers, used by both the (future) confirmation prompt
-# and the delete loop's summary.
+# Cross-platform size helpers, used by both the confirmation prompt and the
+# delete loop's summary.
 dir_bytes() {
   # `du -sk` is available on both GNU and BSD; multiply by 1024 to get bytes.
   local kb

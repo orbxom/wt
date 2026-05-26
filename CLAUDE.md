@@ -9,9 +9,13 @@ A single user-facing command, `wt`, with two modes. Default mode lists local git
 ## Commands
 
 ```bash
-bash wt-picker.test.sh                          # run the test suite (~13 tests, throwaway repos in mktemp)
-bash wt-picker.sh --help                        # CLI usage
+bash wt-picker.test.sh                          # run the picker test suite (~13 tests, throwaway repos in mktemp)
+bash wt-picker.sh --help                        # picker CLI usage
 bash wt-picker.sh --pick-by-branch <name>       # non-interactive seam: bypass fzf, treat <name> as the picked branch
+bash wt-cleaner.test.sh                         # run the cleaner test suite
+bash wt-cleaner.sh --help                       # cleaner CLI usage
+bash wt-cleaner.sh --pick-branches <a,b,c>      # non-interactive seam for cleaner
+bash wt.bash.test.sh                            # test the wt() dispatch function
 ```
 
 There is no build step, no linter, no package manager. Just bash.

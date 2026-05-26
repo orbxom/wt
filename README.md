@@ -126,7 +126,10 @@ If the worktree you're currently in is one of the deletions, the cleaner moves y
 |---|---|
 | `wt-picker.sh` | The whole picker. Prints absolute target path on stdout, exits 0 on success, 130 on user cancel, 1 on error. |
 | `wt-picker.test.sh` | Bash test harness for the picker. ~13 tests; runnable as `bash wt-picker.test.sh`. |
-| `wt.bash` | The shell function. Sources cleanly into bash. |
+| `wt-cleaner.sh` | The cleanup mode. Multi-select deletion of worktrees, with size and confirmation prompt. |
+| `wt-cleaner.test.sh` | Tests for the cleaner. Runnable as `bash wt-cleaner.test.sh`. |
+| `wt.bash` | The shell function. Sources cleanly into bash or zsh. Dispatches to picker or cleaner based on flags. |
+| `wt.bash.test.sh` | Tests for the dispatch function. Runnable as `bash wt.bash.test.sh`. |
 
 ## Running the tests
 
@@ -143,7 +146,7 @@ Branch `feat/gt-9395/use-stripe-foo` creates a worktree at `.worktrees/feat-gt-9
 ## Limitations
 
 - One repo at a time. `wt` runs against whichever repo `git rev-parse --show-toplevel` finds from your current `pwd`.
-- Single selection only. No multi-pick.
+- Single selection in the picker (`wt`). Use `wt --clean` for multi-select cleanup.
 - `gh pr list --limit 200` caps PR data at 200 PRs — branches whose PRs are outside that window show `—`. Bump the limit in `wt-picker.sh` if your repo has more.
 - Branch names longer than 49 characters are truncated in the picker display (with a trailing `…`). The original branch name is still carried internally, so resolution works correctly.
 
