@@ -124,7 +124,7 @@ compute_status() {
     [ "$ahead"  -gt 0 ] && parts="$parts ↑$ahead"
     [ "$behind" -gt 0 ] && parts="$parts ↓$behind"
   fi
-  dirty=$(git -C "$path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  dirty=$(git -C "$path" status --porcelain 2>/dev/null | wc -l | tr -d ' ' || echo 0)
   [ "$dirty" -gt 0 ] && parts="$parts +$dirty"
   parts="${parts# }"
   [ -z "$parts" ] && parts="clean"
