@@ -18,10 +18,21 @@ else
 fi
 _WT_DIR="$(cd "$(dirname "$_wt_self")" && pwd)"
 _WT_PICKER="$_WT_DIR/wt-picker.sh"
+_WT_CLEANER="$_WT_DIR/wt-cleaner.sh"
 unset _wt_self
 
 wt() {
-  local target
-  target=$("$_WT_PICKER" "$@") || return $?
-  cd "$target" || return $?
+  local target rc script
+  case "${1:-}" in
+    -c|--clean|--cleanup)
+      shift
+      script="$_WT_CLEANER"
+      ;;
+    *)
+      script="$_WT_PICKER"
+      ;;
+  esac
+  target=$("$script" "$@") ; rc=$?
+  [ "$rc" -eq 0 ] || return $rc
+  [ -n "$target" ] && cd "$target"
 }
