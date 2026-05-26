@@ -72,4 +72,18 @@ test_harness_smoke() {
   assert_eq "1" "1" "smoke"
 }
 
+test_help_exits_zero_and_prints_usage() {
+  local out rc
+  out=$("$SCRIPT_UNDER_TEST" --help 2>&1) ; rc=$?
+  assert_exit_code "$rc" 0 "--help rc"      || return 1
+  assert_contains "$out" "Usage:" "--help"  || return 1
+}
+
+test_unknown_flag_exits_two() {
+  local out rc
+  out=$("$SCRIPT_UNDER_TEST" --bogus 2>&1) ; rc=$?
+  assert_exit_code "$rc" 2 "--bogus rc"     || return 1
+  assert_contains "$out" "unknown" "--bogus stderr" || return 1
+}
+
 run_all_tests
