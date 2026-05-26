@@ -84,3 +84,56 @@ PRIMARY_ROOT=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null
   exit 1
 }
 PRIMARY_ROOT=$(dirname "$PRIMARY_ROOT")
+
+# Build branch -> absolute-path map from `git worktree list --porcelain`.
+declare -A WORKTREE_MAP
+current_path=""
+while IFS= read -r line; do
+  case "$line" in
+    "worktree "*) current_path="${line#worktree }" ;;
+    "branch refs/heads/"*)
+      br="${line#branch refs/heads/}"
+      WORKTREE_MAP["$br"]="$current_path"
+      ;;
+    "")  current_path="" ;;
+  esac
+done < <(git worktree list --porcelain)
+
+# Eligible = everything except the primary worktree.
+declare -a ELIGIBLE_BRANCHES=()
+declare -a ELIGIBLE_PATHS=()
+for branch in "${!WORKTREE_MAP[@]}"; do
+  path="${WORKTREE_MAP[$branch]}"
+  if [ "$path" = "$PRIMARY_ROOT" ]; then continue; fi
+  ELIGIBLE_BRANCHES+=("$branch")
+  ELIGIBLE_PATHS+=("$path")
+done
+
+# If --pick-branches was given, resolve each name to an eligible path.
+# This runs before the "nothing to clean" guard so that picking a primary-only
+# branch (e.g. main) produces "not an eligible" rather than "no worktrees".
+declare -a SELECTED_PATHS=()
+declare -a SELECTED_BRANCHES=()
+if [ -n "$PICK_BRANCHES" ]; then
+  IFS=',' read -ra picks <<< "$PICK_BRANCHES"
+  for pick in "${picks[@]}"; do
+    found=0
+    for i in "${!ELIGIBLE_BRANCHES[@]}"; do
+      if [ "${ELIGIBLE_BRANCHES[$i]}" = "$pick" ]; then
+        SELECTED_PATHS+=("${ELIGIBLE_PATHS[$i]}")
+        SELECTED_BRANCHES+=("$pick")
+        found=1
+        break
+      fi
+    done
+    if [ "$found" -eq 0 ]; then
+      echo "not an eligible worktree to clean: $pick" >&2
+      exit 1
+    fi
+  done
+fi
+
+if [ "${#ELIGIBLE_BRANCHES[@]}" -eq 0 ]; then
+  echo "no worktrees to clean" >&2
+  exit 1
+fi

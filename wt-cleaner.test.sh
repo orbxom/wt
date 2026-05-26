@@ -118,4 +118,36 @@ test_outside_git_repo_exits_one() {
   assert_contains "$out" "git repo" "outside-repo stderr" || return 1
 }
 
+test_nothing_to_clean_exits_one() {
+  local repo out rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" 2>&1) ; rc=$?
+  assert_exit_code "$rc" 1 "nothing-to-clean rc"                  || return 1
+  assert_contains "$out" "no worktrees" "nothing-to-clean stderr" || return 1
+}
+
+test_primary_excluded_from_picks() {
+  local repo out rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  # `main` is checked out in the primary worktree (the repo root itself).
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches main 2>&1) ; rc=$?
+  assert_exit_code "$rc" 1 "primary-pick rc"                 || return 1
+  assert_contains "$out" "not an eligible" "primary-pick stderr" || return 1
+}
+
+test_unknown_branch_in_pick_branches_errors() {
+  local repo out rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch real
+  git -C "$repo" worktree add -q "$repo/.worktrees/real" real
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches no-such 2>&1) ; rc=$?
+  assert_exit_code "$rc" 1 "unknown-pick rc"                  || return 1
+  assert_contains "$out" "not an eligible" "unknown-pick stderr" || return 1
+  # And confirm the real worktree wasn't touched.
+  [ -d "$repo/.worktrees/real" ] || { echo "  FAIL real worktree disappeared"; return 1; }
+}
+
 run_all_tests
