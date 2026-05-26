@@ -55,15 +55,11 @@ need jq
 resolve_primary_root
 build_worktree_map
 
-declare -a ELIGIBLE_BRANCHES=()
-declare -a ELIGIBLE_PATHS=()
-declare -A BRANCH_TO_PATH=()
+declare -A ELIGIBLE_WORKTREES=()
 for branch in "${!WORKTREE_MAP[@]}"; do
   path="${WORKTREE_MAP[$branch]}"
-  if [ "$path" = "$PRIMARY_ROOT" ]; then continue; fi
-  ELIGIBLE_BRANCHES+=("$branch")
-  ELIGIBLE_PATHS+=("$path")
-  BRANCH_TO_PATH["$branch"]="$path"
+  [ "$path" = "$PRIMARY_ROOT" ] && continue
+  ELIGIBLE_WORKTREES["$branch"]="$path"
 done
 
 compute_status() {
@@ -98,9 +94,8 @@ compose_rows() {
   # sorted oldest-first by committerdate.
   local branch path status_str pr_cell display branch_for_display age ts log_out
   local -a sortable=()
-  for i in "${!ELIGIBLE_BRANCHES[@]}"; do
-    branch="${ELIGIBLE_BRANCHES[$i]}"
-    path="${ELIGIBLE_PATHS[$i]}"
+  for branch in "${!ELIGIBLE_WORKTREES[@]}"; do
+    path="${ELIGIBLE_WORKTREES[$branch]}"
     log_out=$(git -C "$path" log -1 --format='%ct%x09%cr' 2>/dev/null || echo $'0\t?')
     ts="${log_out%%$'\t'*}"
     age="${log_out#*$'\t'}"
@@ -126,7 +121,7 @@ resolve_from_pick_branches() {
   local -a picks=()
   IFS=',' read -ra picks <<< "$picks_csv"
   for pick in "${picks[@]}"; do
-    path="${BRANCH_TO_PATH[$pick]:-}"
+    path="${ELIGIBLE_WORKTREES[$pick]:-}"
     if [ -z "$path" ]; then
       echo "not an eligible worktree to clean: $pick" >&2
       exit 1
