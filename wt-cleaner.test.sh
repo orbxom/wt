@@ -150,4 +150,55 @@ test_unknown_branch_in_pick_branches_errors() {
   [ -d "$repo/.worktrees/real" ] || { echo "  FAIL real worktree disappeared"; return 1; }
 }
 
+test_deletes_selected_worktree() {
+  local repo out rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-a
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-a" feat-a
+  out=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-a 2>/dev/null)
+  rc=$?
+  assert_exit_code "$rc" 0 "single-delete rc" || return 1
+  [ ! -d "$repo/.worktrees/feat-a" ] || { echo "  FAIL worktree still exists"; return 1; }
+}
+
+test_deletes_multiple_selected_worktrees() {
+  local repo rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-a
+  git -C "$repo" branch feat-b
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-a" feat-a
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-b" feat-b
+  (cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-a,feat-b) >/dev/null 2>&1
+  rc=$?
+  assert_exit_code "$rc" 0 "multi-delete rc" || return 1
+  [ ! -d "$repo/.worktrees/feat-a" ] || { echo "  FAIL feat-a still exists"; return 1; }
+  [ ! -d "$repo/.worktrees/feat-b" ] || { echo "  FAIL feat-b still exists"; return 1; }
+}
+
+test_force_removes_dirty_worktree() {
+  local repo rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-d
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-d" feat-d
+  echo "uncommitted change" > "$repo/.worktrees/feat-d/scratch.txt"
+  (cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-d) >/dev/null 2>&1
+  rc=$?
+  assert_exit_code "$rc" 0 "force-dirty rc" || return 1
+  [ ! -d "$repo/.worktrees/feat-d" ] || { echo "  FAIL dirty worktree survived"; return 1; }
+}
+
+test_deletes_succeed_summary_reaches_stderr() {
+  local repo err
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat" feat
+  err=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat 2>&1 >/dev/null)
+  assert_contains "$err" "freed" "summary mentions freed"          || return 1
+  assert_contains "$err" "1 worktree" "summary mentions count"     || return 1
+}
+
 run_all_tests

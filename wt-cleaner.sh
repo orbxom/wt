@@ -137,3 +137,65 @@ if [ "${#ELIGIBLE_BRANCHES[@]}" -eq 0 ]; then
   echo "no worktrees to clean" >&2
   exit 1
 fi
+
+# Cross-platform size helpers, used by both the (future) confirmation prompt
+# and the delete loop's summary.
+dir_bytes() {
+  # `du -sk` is available on both GNU and BSD; multiply by 1024 to get bytes.
+  local kb
+  kb=$(du -sk "$1" 2>/dev/null | awk '{print $1}')
+  echo $(( ${kb:-0} * 1024 ))
+}
+
+fmt_size() {
+  awk -v b="$1" 'BEGIN {
+    if      (b >= 1073741824) printf "%.1f GB", b/1073741824
+    else if (b >= 1048576)    printf "%.0f MB", b/1048576
+    else if (b >= 1024)       printf "%.0f KB", b/1024
+    else                      printf "%d B", b
+  }'
+}
+
+# Without --yes the user must confirm interactively (added in a later task).
+# For now --yes is a hard requirement so the script never silently deletes.
+if [ "$YES" -ne 1 ]; then
+  echo "interactive mode not implemented yet; pass --yes to skip confirmation" >&2
+  exit 1
+fi
+
+# Delete loop.
+declare -i SUCCESS_COUNT=0
+declare -i FAIL_COUNT=0
+declare -i TOTAL_FREED_BYTES=0
+
+for i in "${!SELECTED_PATHS[@]}"; do
+  path="${SELECTED_PATHS[$i]}"
+  branch="${SELECTED_BRANCHES[$i]}"
+  size=$(dir_bytes "$path")
+  if err=$(git -C "$PRIMARY_ROOT" worktree remove --force --force "$path" 2>&1); then
+    SUCCESS_COUNT=$(( SUCCESS_COUNT + 1 ))
+    TOTAL_FREED_BYTES=$(( TOTAL_FREED_BYTES + size ))
+  else
+    echo "failed: $branch — $err" >&2
+    FAIL_COUNT=$(( FAIL_COUNT + 1 ))
+  fi
+done
+
+# Summary on stderr.
+freed_str=$(fmt_size "$TOTAL_FREED_BYTES")
+if [ "$SUCCESS_COUNT" -gt 0 ] && [ "$FAIL_COUNT" -eq 0 ]; then
+  echo "freed $freed_str across $SUCCESS_COUNT worktrees" >&2
+elif [ "$SUCCESS_COUNT" -gt 0 ]; then
+  echo "freed $freed_str across $SUCCESS_COUNT worktrees · $FAIL_COUNT failed (see above)" >&2
+elif [ "$FAIL_COUNT" -gt 0 ]; then
+  echo "nothing freed · $FAIL_COUNT failed" >&2
+fi
+
+# Path for the parent shell to cd to. Self-deletion redirect happens in a later task.
+echo "$PWD"
+
+if [ "$SUCCESS_COUNT" -gt 0 ]; then
+  exit 0
+else
+  exit 1
+fi
