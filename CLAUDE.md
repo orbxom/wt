@@ -20,7 +20,7 @@ Running a single test: tests are plain `test_*` shell functions in `wt-picker.te
 
 ## Architecture
 
-Three files form a pipeline:
+Four files form a pipeline:
 
 ```
 wt.bash  ──sources──►  wt() shell function
