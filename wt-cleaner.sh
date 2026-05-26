@@ -136,6 +136,57 @@ if [ -n "$DEBUG_STATUS" ]; then
   exit 0
 fi
 
+build_pr_map() {
+  declare -gA PR_MAP=()
+  if [ "$NO_PR" -eq 1 ]; then return 0; fi
+  if ! command -v gh >/dev/null 2>&1; then
+    echo "gh not installed; PR column will be '-'. Use --no-pr to silence." >&2
+    return 0
+  fi
+  local json
+  if ! json=$(gh pr list --state all --limit 200 \
+                --json number,state,isDraft,headRefName 2>/dev/null); then
+    echo "gh failed (auth?); PR column will be '-'." >&2
+    return 0
+  fi
+  local ref num state draft cell
+  while IFS=$'\t' read -r ref num state draft; do
+    if [ "$draft" = "true" ]; then
+      cell="#$num Draft"
+    else
+      cell="#$num $state"
+    fi
+    PR_MAP["$ref"]="$cell"
+  done < <(echo "$json" | jq -r '.[] | [.headRefName, .number, .state, .isDraft] | @tsv')
+}
+
+compose_rows() {
+  # Prints "<display>\t<hidden_path>\t<hidden_branch>" per eligible worktree,
+  # sorted oldest-first by committerdate.
+  local branch path status_str pr_cell display branch_for_display age ts
+  local -a sortable=()
+  for i in "${!ELIGIBLE_BRANCHES[@]}"; do
+    branch="${ELIGIBLE_BRANCHES[$i]}"
+    path="${ELIGIBLE_PATHS[$i]}"
+    ts=$(git -C "$path" log -1 --format='%ct' 2>/dev/null || echo 0)
+    # Pad timestamp to a fixed width so lexicographic sort is numeric-correct.
+    sortable+=("$(printf '%012d\t%s\t%s\n' "$ts" "$branch" "$path")")
+  done
+  if [ "${#sortable[@]}" -eq 0 ]; then return 0; fi
+  printf '%s\n' "${sortable[@]}" | sort | while IFS=$'\t' read -r _ts branch path; do
+    status_str=$(compute_status "$branch")
+    pr_cell="${PR_MAP[$branch]:--}"
+    age=$(git -C "$path" log -1 --format='%cr' 2>/dev/null || echo "?")
+    branch_for_display="$branch"
+    if [ ${#branch_for_display} -gt 50 ]; then
+      branch_for_display="${branch_for_display:0:49}…"
+    fi
+    display=$(printf '%-50s  %-14s  %-18s  %-16s' \
+      "$branch_for_display" "$age" "$status_str" "$pr_cell")
+    printf '%s\t%s\t%s\n' "$display" "$path" "$branch"
+  done
+}
+
 # If --pick-branches was given, resolve each name to an eligible path.
 # This runs before the "nothing to clean" guard so that picking a primary-only
 # branch (e.g. main) produces "not an eligible" rather than "no worktrees".
@@ -158,6 +209,38 @@ if [ -n "$PICK_BRANCHES" ]; then
       exit 1
     fi
   done
+else
+  build_pr_map
+  ROWS=$(compose_rows)
+  if [ -z "$ROWS" ]; then
+    echo "no worktrees to clean" >&2
+    exit 1
+  fi
+  HEADER_COLS=$(printf '%-50s  %-14s  %-18s  %-16s' "BRANCH" "AGE" "STATUS" "PR")
+  HEADER_LEGEND='Tab select  ·  Enter confirm  ·  Esc cancel'
+  PICKED=$(echo "$ROWS" | fzf \
+    --multi \
+    --ansi \
+    --delimiter=$'\t' \
+    --with-nth=1 \
+    --nth=1 \
+    --layout=reverse \
+    --height=80% \
+    --prompt='clean › ' \
+    --header="${HEADER_COLS}"$'\n'"${HEADER_LEGEND}") || exit $?
+
+  if [ -z "$PICKED" ]; then
+    echo "nothing selected" >&2
+    exit 130
+  fi
+
+  while IFS= read -r row; do
+    rest="${row#*$'\t'}"
+    p="${rest%%$'\t'*}"
+    b="${rest#*$'\t'}"
+    SELECTED_PATHS+=("$p")
+    SELECTED_BRANCHES+=("$b")
+  done <<< "$PICKED"
 fi
 
 if [ "${#ELIGIBLE_BRANCHES[@]}" -eq 0 ]; then
