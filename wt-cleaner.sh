@@ -190,6 +190,22 @@ if [ "$YES" -ne 1 ]; then
   exit 1
 fi
 
+# Detect whether $PWD is one of the picked paths (self-delete case).
+ORIGINAL_PWD="$PWD"
+SELF_DELETE=0
+for path in "${SELECTED_PATHS[@]}"; do
+  if [ "$ORIGINAL_PWD" = "$path" ]; then
+    SELF_DELETE=1
+    break
+  fi
+done
+
+# If we're about to remove our own cwd, step out to PRIMARY_ROOT first so
+# git doesn't refuse with "cannot remove the current working directory".
+if [ "$SELF_DELETE" -eq 1 ]; then
+  cd "$PRIMARY_ROOT"
+fi
+
 # Delete loop.
 declare -i SUCCESS_COUNT=0
 declare -i FAIL_COUNT=0
@@ -208,7 +224,6 @@ for i in "${!SELECTED_PATHS[@]}"; do
   fi
 done
 
-# Summary on stderr.
 freed_str=$(fmt_size "$TOTAL_FREED_BYTES")
 if [ "$SUCCESS_COUNT" -gt 0 ] && [ "$FAIL_COUNT" -eq 0 ]; then
   echo "freed $freed_str across $SUCCESS_COUNT worktrees" >&2
@@ -218,8 +233,12 @@ elif [ "$FAIL_COUNT" -gt 0 ]; then
   echo "nothing freed · $FAIL_COUNT failed" >&2
 fi
 
-# Path for the parent shell to cd to. Self-deletion redirect happens in a later task.
-echo "$PWD"
+# stdout: where the parent shell should cd.
+if [ "$SELF_DELETE" -eq 1 ]; then
+  echo "$PRIMARY_ROOT"
+else
+  echo "$ORIGINAL_PWD"
+fi
 
 if [ "$SUCCESS_COUNT" -gt 0 ]; then
   exit 0

@@ -306,4 +306,36 @@ test_debug_status_no_upstream() {
   assert_eq "$out" "+1" "status-no-upstream" || return 1
 }
 
+test_picking_current_worktree_redirects_to_primary() {
+  local repo out rc primary
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  primary=$(cd "$repo" && git rev-parse --show-toplevel)
+  git -C "$repo" branch feat-self
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-self" feat-self
+  out=$(cd "$repo/.worktrees/feat-self" \
+        && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-self 2>/dev/null)
+  rc=$?
+  assert_exit_code "$rc" 0 "self-delete rc"             || return 1
+  assert_eq "$out" "$primary" "self-delete stdout = primary" || return 1
+  [ ! -d "$repo/.worktrees/feat-self" ] || { echo "  FAIL feat-self survived"; return 1; }
+}
+
+test_picking_non_current_worktree_keeps_pwd() {
+  local repo out rc here
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-here
+  git -C "$repo" branch feat-other
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-here"  feat-here
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-other" feat-other
+  here="$repo/.worktrees/feat-here"
+  out=$(cd "$here" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-other 2>/dev/null)
+  rc=$?
+  assert_exit_code "$rc" 0 "non-self-delete rc"             || return 1
+  assert_eq "$out" "$here" "non-self-delete stdout = pwd"   || return 1
+  [   -d "$here" ]                       || { echo "  FAIL pwd vanished"; return 1; }
+  [ ! -d "$repo/.worktrees/feat-other" ] || { echo "  FAIL feat-other survived"; return 1; }
+}
+
 run_all_tests
