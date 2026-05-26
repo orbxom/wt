@@ -201,4 +201,37 @@ test_deletes_succeed_summary_reaches_stderr() {
   assert_contains "$err" "1 worktree" "summary mentions count"     || return 1
 }
 
+test_partial_failure_continues_and_reports() {
+  local repo err rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-ok
+  git -C "$repo" branch feat-broken
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-ok"     feat-ok
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-broken" feat-broken
+  # Break the second one: remove the .git pointer so `git worktree remove`
+  # refuses ("not a working tree"). The admin entry stays around so it's
+  # still in `git worktree list --porcelain`.
+  rm "$repo/.worktrees/feat-broken/.git"
+  err=$(cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-ok,feat-broken 2>&1 >/dev/null)
+  rc=$?
+  assert_exit_code "$rc" 0 "partial-failure rc"                          || return 1
+  [ ! -d "$repo/.worktrees/feat-ok" ]      || { echo "  FAIL ok survived"; return 1; }
+  [   -d "$repo/.worktrees/feat-broken" ] || { echo "  FAIL broken vanished"; return 1; }
+  assert_contains "$err" "failed: feat-broken" "per-failure line" || return 1
+  assert_contains "$err" "1 failed"           "summary count"     || return 1
+}
+
+test_all_failures_exit_one() {
+  local repo rc
+  repo=$(new_repo)
+  trap "rm -rf '$repo'" RETURN
+  git -C "$repo" branch feat-bad
+  git -C "$repo" worktree add -q "$repo/.worktrees/feat-bad" feat-bad
+  rm "$repo/.worktrees/feat-bad/.git"
+  (cd "$repo" && "$SCRIPT_UNDER_TEST" --yes --pick-branches feat-bad) >/dev/null 2>&1
+  rc=$?
+  assert_exit_code "$rc" 1 "all-fail rc" || return 1
+}
+
 run_all_tests
